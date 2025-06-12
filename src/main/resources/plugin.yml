@@ -1,0 +1,22 @@
+name: NoIllegals
+version: '1.3'
+main: me.redslime.noIllegals.NoIllegals
+api-version: '1.20'
+authors: [ TheMrRedSlime ]
+description: A Plugin that should hopefully prevent illegals
+commands:
+  illegal:
+    description: Reload plugin
+    usage: /illegal
+    permission: illegal.cmd
+
+permissions:
+  illegal.cmd:
+    description: Reload Illegals Plugin!
+    default: op
+  illegal.bypass:
+    description: Bypass the Illegals check!
+    default: op
+  illegal.alerts:
+    description: Get alerts for the Illegals plugin!
+    default: op
