@@ -79,7 +79,7 @@ public final class NoIllegals extends JavaPlugin implements Listener {
         Player player = event.getPlayer();
         ItemStack item = event.getItemInHand();
         if(!player.hasPermission("illegal.bypass") && player.getGameMode() == GameMode.CREATIVE && antichestnbt){
-            if (isContainer(item)) { // Use the isContainer method here
+            if (isContainer(item)) {
                 event.setCancelled(true);
                 player.sendMessage(ChatColor.RED + "You cannot place container blocks with NBT data!");
                 sendAlert("Player " + player.getName() + " tried to place container item: " + item.getType().name());
