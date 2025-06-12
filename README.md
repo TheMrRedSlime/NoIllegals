@@ -46,5 +46,7 @@ Customizable settings to enable or disable specific checks based on server prefe
 
 # Permissions
 ```illegal.cmd```: the main permission.
+
 ```illegal.alerts```: The permission to see alerts.
+
 ```illegal.bypass```: Bypass the illegal check.
