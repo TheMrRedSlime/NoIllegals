@@ -6,14 +6,21 @@ import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.block.BlockState;
+import org.bukkit.block.Container;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.CreatureSpawnEvent;
+import org.bukkit.event.entity.EntitySpawnEvent;
+import org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason;
 import org.bukkit.event.inventory.*;
+import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemFlag;
@@ -22,6 +29,7 @@ import org.bukkit.inventory.meta.BlockStateMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.lushplugins.pluginupdater.api.updater.Updater;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -37,7 +45,7 @@ import java.util.concurrent.TimeUnit;
 public final class NoIllegals extends JavaPlugin implements Listener {
 
     private static long lastRequestTime = 0;
-    private boolean fixPotions, noIllegalBlocks, fixIllegals, fixOverstack, fixAttribute, fixUnbreakable, antichestnbt;
+    private boolean fixPotions, noIllegalBlocks, fixIllegals, fixOverstack, fixAttribute, fixUnbreakable, antichestnbt, creativechestlock, nospawneggs;
     private FileConfiguration config;
     private String webhookUrl;
 
@@ -45,8 +53,11 @@ public final class NoIllegals extends JavaPlugin implements Listener {
     public void onEnable() {
         saveDefaultConfig();
         config = getConfig();
+        getConfig().options().copyDefaults(true);
+        saveConfig();
         reloadConfigValues();
         System.out.println("[NoIllegals]: Enabled!");
+        autoUpdate();
         getServer().getPluginManager().registerEvents(this, this);
         getCommand("illegal").setExecutor((sender, command, label, args) -> {
             if (sender instanceof Player player) {
@@ -72,6 +83,8 @@ public final class NoIllegals extends JavaPlugin implements Listener {
         fixAttribute = config.getBoolean("fixAttribute");
         fixUnbreakable = config.getBoolean("fixUnbreakable");
         antichestnbt = config.getBoolean("antichestnbt");
+        creativechestlock = config.getBoolean("creativechestlock");
+        nospawneggs = config.getBoolean("nospawneggs");
     }
 
     @EventHandler
@@ -79,20 +92,33 @@ public final class NoIllegals extends JavaPlugin implements Listener {
         Player player = event.getPlayer();
         ItemStack item = event.getItemInHand();
         if(!player.hasPermission("illegal.bypass") && player.getGameMode() == GameMode.CREATIVE && antichestnbt){
-            if (isContainer(item)) {
-                event.setCancelled(true);
-                player.sendMessage(ChatColor.RED + "You cannot place container blocks with NBT data!");
-                sendAlert("Player " + player.getName() + " tried to place container item: " + item.getType().name());
+            if (event.getBlock().getState() instanceof Container container) {
+                if (!container.getInventory().isEmpty()){            
+                    event.setCancelled(true);
+                    player.sendMessage(ChatColor.RED + "You cannot place container blocks with NBT data!");
+                    alertUsers("Player " + player.getName() + " tried to place container item with inventory data!:" + item.getType().name());
+                    sendAlert("Player " + player.getName() + " tried to place container item with inventory data!:" + item.getType().name());
+
+                }
             }
         }
     }
 
     @EventHandler
+    public void onMobSpawn(CreatureSpawnEvent event){
+        if(event.getSpawnReason() == SpawnReason.SPAWNER_EGG){
+            event.setCancelled(true);
+            alertUsers("A mob was spawned due to a spawn egg! This was prevented.");
+            sendAlert("A mob was spawned due to a spawn egg! This was prevented.");
+        }
+    }
+    
+    @EventHandler
     public void onPlayerInteract(PlayerInteractEvent event){
         if(!event.getPlayer().hasPermission("illegal.bypass")){
             checkItem(event.getItem());
             if(!event.getMaterial().isAir()) {
-                if (getConfig().getBoolean("noIllegalBlocks") && (event.getMaterial() == Material.BEDROCK || event.getMaterial() == Material.BARRIER || event.getMaterial() == Material.LIGHT || event.getMaterial() == Material.STRUCTURE_VOID || event.getMaterial() == Material.STRUCTURE_BLOCK || event.getMaterial() == Material.END_PORTAL_FRAME || event.getMaterial() == Material.SPAWNER)) {
+                if (getConfig().getBoolean("noIllegalBlocks") && (event.getMaterial() == Material.BEDROCK || event.getMaterial() == Material.BARRIER || event.getMaterial() == Material.LIGHT || event.getMaterial() == Material.STRUCTURE_VOID || event.getMaterial() == Material.STRUCTURE_BLOCK || event.getMaterial() == Material.END_PORTAL_FRAME || event.getMaterial() == Material.SPAWNER || event.getMaterial() == Material.REINFORCED_DEEPSLATE || event.getMaterial() == Material.COMMAND_BLOCK_MINECART)) {
                     event.setCancelled(true);
                 }
             }
@@ -108,6 +134,19 @@ public final class NoIllegals extends JavaPlugin implements Listener {
                     }
                 }
             }
+            if(event.getAction() == Action.RIGHT_CLICK_BLOCK && event.getItem().toString().contains("SPAWN_EGG") && event.getClickedBlock().getType() == Material.SPAWNER && !event.getPlayer().hasPermission("illegal.bypass")){
+                event.setCancelled(true);
+                alertUsers(event.getPlayer().getName() + "tried to use a spawn egg with a spawner!");
+                sendAlert(event.getPlayer().getName() + "tried to use a spawn egg with a spawner!");
+            }
+        }
+    }
+
+    @EventHandler
+    public void onPlayerDrop(PlayerDropItemEvent event){
+        if(event.getPlayer().getGameMode() == GameMode.CREATIVE && creativechestlock && !event.getPlayer().hasPermission("illegal.bypass")){
+            event.setCancelled(true);
+            event.getPlayer().sendMessage(ChatColor.RED + "You are not allowed to drop items in creative!");
         }
     }
 
@@ -124,7 +163,14 @@ public final class NoIllegals extends JavaPlugin implements Listener {
 
     @EventHandler
     public void onInventoryOpen(InventoryOpenEvent event) {
-        checkInventory(event.getInventory());
+        if(event.getPlayer().getGameMode() == GameMode.CREATIVE && !event.getPlayer().hasPermission("illegal.bypass")){
+            event.getPlayer().sendMessage(ChatColor.RED + "You cant open containers in creative!");
+            event.setCancelled(true);
+            return;
+        }
+        if(!event.getPlayer().hasPermission("illegal.bypass")){
+            checkInventory(event.getInventory());
+        }
     }
 
     private void checkInventory(Inventory inventory) {
@@ -142,25 +188,6 @@ public final class NoIllegals extends JavaPlugin implements Listener {
             }
         }
     }
-    private boolean isContainer(ItemStack item) {
-        if (item == null || item.getType() == Material.AIR) {
-            return false;
-        }
-        if (item.getItemMeta() instanceof BlockStateMeta blockStateMeta) {
-            BlockState blockState = blockStateMeta.getBlockState();
-            if (blockState instanceof InventoryHolder holder) {
-                Inventory inventory = holder.getInventory();
-                for (ItemStack content : inventory.getContents()) {
-                    if (content != null && content.getType() != Material.AIR) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-        }
-        return false;
-    }
-
 
     private boolean checkItem(ItemStack item) {
         if (item == null) return false;
@@ -176,11 +203,20 @@ public final class NoIllegals extends JavaPlugin implements Listener {
                 modified = true;
             }
         }
+        
+        if(nospawneggs && item.getType().toString().contains("SPAWN_EGG")){
+            alertUsers("Illegal Spawn Egg " + item.getType().name() + " Has been Removed.");
+            sendAlert("Illegal Spawn Egg " + item.getType().name() + " Has been Removed.");
+            item.setAmount(0);
+            modified = true;
+        }
 
         if (noIllegalBlocks && (item.getType() == Material.BEDROCK || item.getType() == Material.BARRIER ||
                 item.getType() == Material.LIGHT || item.getType() == Material.STRUCTURE_BLOCK ||
                 item.getType() == Material.STRUCTURE_VOID || item.getType() == Material.SPAWNER ||
-                item.getType() == Material.END_PORTAL_FRAME)) {
+                item.getType() == Material.END_PORTAL_FRAME || 
+                item.getType() == Material.REINFORCED_DEEPSLATE || 
+                item.getType() == Material.COMMAND_BLOCK_MINECART)) {
             sendAlert("Illegal item " + item.getType().name() + " removed.");
             alertUsers(ChatColor.GREEN + "Illegal item " + item.getType().name() + " removed.");
             item.setAmount(0);
@@ -279,9 +315,27 @@ public final class NoIllegals extends JavaPlugin implements Listener {
     public void alertUsers(String str){
         for (Player player : Bukkit.getOnlinePlayers()) {
             if(player.hasPermission("illegal.alerts")){
-                player.sendMessage(str);
+                player.sendMessage(ChatColor.GREEN + str);
             }
         }
+    }
+
+    public void autoUpdate(){
+        Updater updater = new Updater.Builder(getPlugin(NoIllegals.class))
+        .modrinth("5qvP2NRZ", false) // Updater platform(s)
+        .build();
+        if (updater.isAlreadyDownloaded() || !updater.isUpdateAvailable()) {
+            Bukkit.getLogger().info("It looks like there is no new update available!");
+            return;
+        }
+
+        updater.attemptDownload().thenAccept(success -> {
+            if (success) {
+                Bukkit.getLogger().info("Successfully updated plugin, restart the server to apply changes!");
+            } else {
+                Bukkit.getLogger().info("Failed to update plugin!");
+            }
+        });
     }
 
     @Override

@@ -27,4 +27,4 @@ jobs:
         uses: actions/upload-artifact@v4 # Upload the compiled JAR as an artifact
         with:
           name: ${{ github.event.repository.name }}.jar # Name the artifact based on your repository name
-          path: target/NoIllegals-*.jar # Path to your compiled plugin JAR (adjust if your build output differs)
+          path: target/*.jar # Path to your compiled plugin JAR (adjust if your build output differs)
