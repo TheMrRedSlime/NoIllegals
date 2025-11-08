@@ -41,6 +41,10 @@ Keeps the server environment fair and fun for all players.
 Lightweight and efficient, ensuring minimal impact on server performance.
 Customizable settings to enable or disable specific checks based on server preferences.
 
+# Contribution
+
+@Host1999 - Bug where Enchantment books & Tipped Arrows did not have proper checks
+
 # Commands
 ```/illegal``` the main command.
 

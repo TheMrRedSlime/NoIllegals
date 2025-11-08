@@ -1,46 +1,49 @@
 package me.redslime.noIllegals;
 
-import com.google.gson.Gson;
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.GameMode;
-import org.bukkit.Material;
-import org.bukkit.block.BlockState;
-import org.bukkit.block.Container;
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.enchantments.Enchantment;
-import org.bukkit.entity.Player;
-import org.bukkit.event.EventHandler;
-import org.bukkit.event.Listener;
-import org.bukkit.event.block.Action;
-import org.bukkit.event.block.BlockPlaceEvent;
-import org.bukkit.event.entity.CreatureSpawnEvent;
-import org.bukkit.event.entity.EntitySpawnEvent;
-import org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason;
-import org.bukkit.event.inventory.*;
-import org.bukkit.event.player.PlayerDropItemEvent;
-import org.bukkit.event.player.PlayerInteractEvent;
-import org.bukkit.event.player.PlayerItemHeldEvent;
-import org.bukkit.inventory.Inventory;
-import org.bukkit.inventory.InventoryHolder;
-import org.bukkit.inventory.ItemFlag;
-import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.BlockStateMeta;
-import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.inventory.meta.PotionMeta;
-import org.bukkit.plugin.java.JavaPlugin;
-import org.lushplugins.pluginupdater.api.updater.Updater;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+
+import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
+import org.bukkit.GameMode;
+import org.bukkit.Material;
+import org.bukkit.block.Container;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.enchantments.Enchantment;
+import org.bukkit.entity.Arrow;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.CreatureSpawnEvent;
+import org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason;
+import org.bukkit.event.entity.EntityShootBowEvent;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryOpenEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.EnchantmentStorageMeta;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.PotionMeta;
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionType;
+import org.lushplugins.pluginupdater.api.updater.Updater;
+
+import com.google.gson.Gson;
 
 public final class NoIllegals extends JavaPlugin implements Listener {
 
@@ -143,6 +146,35 @@ public final class NoIllegals extends JavaPlugin implements Listener {
     }
 
     @EventHandler
+    public void onArrowShoot(EntityShootBowEvent event) {
+        if (!(event.getProjectile() instanceof Arrow arrow)) return;
+
+        List<PotionEffect> allEffects = new ArrayList<>();
+
+        PotionType baseType = arrow.getBasePotionType();
+        if (baseType != null) {
+            allEffects.addAll(baseType.getPotionEffects());
+        }
+
+        allEffects.addAll(arrow.getCustomEffects());
+
+        for (PotionEffect effect : allEffects) {
+            if (effect.getAmplifier() > 1) {
+                arrow.removeCustomEffect(effect.getType());
+                arrow.addCustomEffect(new PotionEffect(
+                        effect.getType(),
+                        effect.getDuration(),
+                        1,
+                        effect.isAmbient(),
+                        effect.hasParticles(),
+                        effect.hasIcon()
+                ), true);
+            }
+        }
+    }
+
+
+    @EventHandler
     public void onPlayerDrop(PlayerDropItemEvent event){
         if(event.getPlayer().getGameMode() == GameMode.CREATIVE && creativechestlock && !event.getPlayer().hasPermission("illegal.bypass")){
             event.setCancelled(true);
@@ -202,6 +234,18 @@ public final class NoIllegals extends JavaPlugin implements Listener {
                 item.setAmount(0);
                 modified = true;
             }
+
+            if(item.getType() == Material.TIPPED_ARROW){
+                if(item.hasItemMeta()){
+                    PotionMeta meta = item.getItemMeta();
+                    if (meta != null && meta.hasCustomEffects()){
+                        sendAlert("Illegal potion arrow " + item.getType().name() + " removed.");
+                        alertUsers(ChatColor.GREEN + "Illegal potion arrow " + item.getType().name() + " removed.");
+                        item.setAmount(0);
+                        modified = true;
+                    }
+                }
+            }
         }
         
         if(nospawneggs && item.getType().toString().contains("SPAWN_EGG")){
@@ -237,6 +281,24 @@ public final class NoIllegals extends JavaPlugin implements Listener {
                     alertUsers(ChatColor.GREEN + "Illegal enchantment " + ench + "(" + level + ") removed.");
                     item.removeEnchantment(ench);
                     modified = true;
+                }
+            }
+
+            if(item.getType() == Material.ENCHANTED_BOOK){
+                if(item.hasItemMeta()){
+                    EnchantmentStorageMeta meta = item.getItemMeta();
+                    Map<Enchantment, Integer> enchants = meta.getStoredEnchants();
+                    
+                    for (Map.Entry<Enchantment, Integer> enchant : stored.entrySet()) {
+                        int level = enchant.getValue();
+                        if(level > enchant.getKey().getMaxLevel()){
+                            sendAlert("Illegal enchantment book " + ench + "(" + level + ") fixed.");
+                            alertUsers(ChatColor.GREEN + "Illegal enchantment book " + ench + "(" + level + ") fixed.");
+                            meta.removeStoredEnchant(enchant);
+                            meta.addStoredEnchant(enchant.getKey(), enchant.getKey().getMaxLevel(), true);
+                            modified = true;
+                        }
+                    }
                 }
             }
         }
