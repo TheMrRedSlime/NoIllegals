@@ -236,8 +236,7 @@ public final class NoIllegals extends JavaPlugin implements Listener {
             }
 
             if(item.getType() == Material.TIPPED_ARROW){
-                if(item.hasItemMeta()){
-                    PotionMeta meta = item.getItemMeta();
+                if(item.hasItemMeta() && item.getItemMeta() instanceof PotionMeta meta){
                     if (meta != null && meta.hasCustomEffects()){
                         sendAlert("Illegal potion arrow " + item.getType().name() + " removed.");
                         alertUsers(ChatColor.GREEN + "Illegal potion arrow " + item.getType().name() + " removed.");
@@ -285,16 +284,15 @@ public final class NoIllegals extends JavaPlugin implements Listener {
             }
 
             if(item.getType() == Material.ENCHANTED_BOOK){
-                if(item.hasItemMeta()){
-                    EnchantmentStorageMeta meta = item.getItemMeta();
+                if(item.hasItemMeta() && item.getItemMeta() instanceof EnchantmentStorageMeta meta){
                     Map<Enchantment, Integer> enchants = meta.getStoredEnchants();
                     
-                    for (Map.Entry<Enchantment, Integer> enchant : stored.entrySet()) {
+                    for (Map.Entry<Enchantment, Integer> enchant : enchants.entrySet()) {
                         int level = enchant.getValue();
                         if(level > enchant.getKey().getMaxLevel()){
-                            sendAlert("Illegal enchantment book " + ench + "(" + level + ") fixed.");
-                            alertUsers(ChatColor.GREEN + "Illegal enchantment book " + ench + "(" + level + ") fixed.");
-                            meta.removeStoredEnchant(enchant);
+                            sendAlert("Illegal enchantment book " + enchant.getKey() + "(" + level + ") fixed.");
+                            alertUsers(ChatColor.GREEN + "Illegal enchantment book " + enchant.getKey()+ "(" + level + ") fixed.");
+                            meta.removeStoredEnchant(enchant.getKey());
                             meta.addStoredEnchant(enchant.getKey(), enchant.getKey().getMaxLevel(), true);
                             modified = true;
                         }
