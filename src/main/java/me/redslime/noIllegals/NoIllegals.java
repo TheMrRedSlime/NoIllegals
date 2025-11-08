@@ -21,6 +21,7 @@ import org.bukkit.block.Container;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Arrow;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -30,9 +31,11 @@ import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason;
 import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.EnchantmentStorageMeta;
@@ -115,6 +118,13 @@ public final class NoIllegals extends JavaPlugin implements Listener {
             sendAlert("A mob was spawned due to a spawn egg! This was prevented.");
         }
     }
+
+    @EventHandler
+    public void onPlayerHold(PlayerItemHeldEvent event){
+        if(!event.getPlayer().hasPermission("illegal.bypass")){
+            checkItem(event.getPlayer().getInventory().getItem(event.getNewSlot()));
+        }
+    }
     
     @EventHandler
     public void onPlayerInteract(PlayerInteractEvent event){
@@ -149,27 +159,10 @@ public final class NoIllegals extends JavaPlugin implements Listener {
     public void onArrowShoot(EntityShootBowEvent event) {
         if (!(event.getProjectile() instanceof Arrow arrow)) return;
 
-        List<PotionEffect> allEffects = new ArrayList<>();
-
-        PotionType baseType = arrow.getBasePotionType();
-        if (baseType != null) {
-            allEffects.addAll(baseType.getPotionEffects());
-        }
-
-        allEffects.addAll(arrow.getCustomEffects());
-
-        for (PotionEffect effect : allEffects) {
-            if (effect.getAmplifier() > 1) {
-                arrow.removeCustomEffect(effect.getType());
-                arrow.addCustomEffect(new PotionEffect(
-                        effect.getType(),
-                        effect.getDuration(),
-                        1,
-                        effect.isAmbient(),
-                        effect.hasParticles(),
-                        effect.hasIcon()
-                ), true);
-            }
+        if (arrow.hasCustomEffects()) {
+            arrow.clearCustomEffects();
+            sendAlert("Illegal potion arrow effects cleared for arrow with custom effects.");
+            alertUsers(ChatColor.GREEN + "Illegal potion arrow effects cleared.");
         }
     }
 
@@ -205,6 +198,13 @@ public final class NoIllegals extends JavaPlugin implements Listener {
         }
     }
 
+    @EventHandler
+    public void onInventoryClose(InventoryCloseEvent event) {
+        if(!event.getPlayer().hasPermission("illegal.bypass")){
+            checkInventory(event.getInventory());
+        }
+    }
+
     private void checkInventory(Inventory inventory) {
         if(inventory.getHolder() instanceof Player plr){
             if(plr.hasPermission("illegal.bypass")){
@@ -213,7 +213,7 @@ public final class NoIllegals extends JavaPlugin implements Listener {
         }
         for (int i = 0; i < inventory.getSize(); i++) {
             ItemStack item = inventory.getItem(i);
-            if (item != null) {
+            if (item != null && !item.getType().isAir()) {
                 if (checkItem(item)) {
                     inventory.setItem(i, item);
                 }
@@ -226,13 +226,16 @@ public final class NoIllegals extends JavaPlugin implements Listener {
         if (item.getType() == Material.AIR) return false;
         boolean modified = false;
 
-        if (fixPotions && (item.getType() == Material.POTION || item.getType() == Material.SPLASH_POTION || item.getType() == Material.LINGERING_POTION)) {
-            PotionMeta potionMeta = (PotionMeta) item.getItemMeta();
-            if (potionMeta != null && potionMeta.hasCustomEffects()) {
-                sendAlert("Illegal potion " + item.getType().name() + " removed.");
-                alertUsers(ChatColor.GREEN + "Illegal potion " + item.getType().name() + " removed.");
-                item.setAmount(0);
-                modified = true;
+        if (fixPotions) {
+
+            if ((item.getType() == Material.POTION || item.getType() == Material.SPLASH_POTION || item.getType() == Material.LINGERING_POTION)){
+                PotionMeta potionMeta = (PotionMeta) item.getItemMeta();
+                if (potionMeta != null && potionMeta.hasCustomEffects()) {
+                    sendAlert("Illegal potion " + item.getType().name() + " removed.");
+                    alertUsers(ChatColor.GREEN + "Illegal potion " + item.getType().name() + " removed.");
+                    item.setAmount(0);
+                    modified = true;
+                }
             }
 
             if(item.getType() == Material.TIPPED_ARROW){
@@ -283,19 +286,28 @@ public final class NoIllegals extends JavaPlugin implements Listener {
                 }
             }
 
-            if(item.getType() == Material.ENCHANTED_BOOK){
-                if(item.hasItemMeta() && item.getItemMeta() instanceof EnchantmentStorageMeta meta){
+            if(item.getType() == Material.ENCHANTED_BOOK) {
+                if(item.hasItemMeta() && item.getItemMeta() instanceof EnchantmentStorageMeta meta) {
                     Map<Enchantment, Integer> enchants = meta.getStoredEnchants();
-                    
-                    for (Map.Entry<Enchantment, Integer> enchant : enchants.entrySet()) {
-                        int level = enchant.getValue();
-                        if(level > enchant.getKey().getMaxLevel()){
-                            sendAlert("Illegal enchantment book " + enchant.getKey() + "(" + level + ") fixed.");
-                            alertUsers(ChatColor.GREEN + "Illegal enchantment book " + enchant.getKey()+ "(" + level + ") fixed.");
-                            meta.removeStoredEnchant(enchant.getKey());
-                            meta.addStoredEnchant(enchant.getKey(), enchant.getKey().getMaxLevel(), true);
-                            modified = true;
+                    boolean bookModified = false;
+
+                    for(Map.Entry<Enchantment, Integer> entry : enchants.entrySet()) {
+                        Enchantment ench = entry.getKey();
+                        int level = entry.getValue();
+
+                        if(level > ench.getMaxLevel()) {
+                            sendAlert("Illegal enchantment book " + ench + "(" + level + ") fixed.");
+                            alertUsers(ChatColor.GREEN + "Illegal enchantment book " + ench + "(" + level + ") fixed.");
+
+                            meta.removeStoredEnchant(ench);
+                            meta.addStoredEnchant(ench, ench.getMaxLevel(), true);
+                            bookModified = true;
                         }
+                    }
+
+                    if(bookModified) {
+                        item.setItemMeta(meta);
+                        modified = true;
                     }
                 }
             }
@@ -335,49 +347,50 @@ public final class NoIllegals extends JavaPlugin implements Listener {
             long currentTime = System.currentTimeMillis();
 
             if (currentTime - lastRequestTime < 1000) {
-                try {
-                    long sleepTime = 1000 - (currentTime - lastRequestTime);
-                    TimeUnit.MILLISECONDS.sleep(sleepTime);
-                } catch (InterruptedException e) {
-                    Bukkit.getLogger().warning("Rate limit sleep interrupted: " + e.getMessage());
-                }
-            }
-            try {
-                URL url = new URL(Objects.requireNonNull(getConfig().getString("webhook-url")));
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty("Content-Type", "application/json");
-                conn.setDoOutput(true);
-
-                Map<String, String> data = new HashMap<>();
-                data.put("content", message);
-                String json = new Gson().toJson(data);
-
-                try (OutputStream os = conn.getOutputStream()) {
-                    os.write(json.getBytes());
-                }
-
-                try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
-                    String line;
-                    StringBuilder response = new StringBuilder();
-                    while ((line = br.readLine()) != null) {
-                        response.append(line);
+                Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+                    try {
+                        long sleepTime = 1000 - (currentTime - lastRequestTime);
+                        TimeUnit.MILLISECONDS.sleep(sleepTime);
+                    } catch (InterruptedException e) {
+                        Bukkit.getLogger().warning("Rate limit sleep interrupted: " + e.getMessage());
                     }
-                }
-
-            } catch (IOException e) {
-                Bukkit.getLogger().warning("Failed to send webhook message: " + e.getMessage());
+                });
             }
+            Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+                try {
+                    URL url = new URL(Objects.requireNonNull(getConfig().getString("webhook-url")));
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/json");
+                    conn.setDoOutput(true);
+
+                    Map<String, String> data = new HashMap<>();
+                    data.put("content", message);
+                    String json = new Gson().toJson(data);
+
+                    try (OutputStream os = conn.getOutputStream()) {
+                        os.write(json.getBytes());
+                    }
+
+                    try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                        String line;
+                        StringBuilder response = new StringBuilder();
+                        while ((line = br.readLine()) != null) {
+                            response.append(line);
+                        }
+                    }
+
+                } catch (IOException e) {
+                    Bukkit.getLogger().warning("Failed to send webhook message: " + e.getMessage());
+                }
+            });
             lastRequestTime = System.currentTimeMillis();
         }
     }
 
     public void alertUsers(String str){
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            if(player.hasPermission("illegal.alerts")){
-                player.sendMessage(ChatColor.GREEN + str);
-            }
-        }
+        Bukkit.getLogger().info(ChatColor.GREEN + str);
+        Bukkit.broadcast(ChatColor.GREEN + str, "illegal.alerts");
     }
 
     public void autoUpdate(){
