@@ -72,6 +72,7 @@ public final class NoIllegals extends JavaPlugin implements Listener {
                     return false;
                 }
                 reloadConfig();
+                config = getConfig(); // Apparently this should fix the fact that i keep having to restart for the config to reload
                 reloadConfigValues();
                 player.sendMessage(ChatColor.GREEN + "Reloaded Config!");
                 return true;
