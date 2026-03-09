@@ -44,6 +44,7 @@ Customizable settings to enable or disable specific checks based on server prefe
 # Contribution
 
 @Host1999 - Bug where Enchantment books & Tipped Arrows did not have proper checks
+@Tempest-5ky - Bug where InventoryOpen did not respect creativelock config
 
 # Commands
 ```/illegal``` the main command.
