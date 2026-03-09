@@ -188,7 +188,7 @@ public final class NoIllegals extends JavaPlugin implements Listener {
 
     @EventHandler
     public void onInventoryOpen(InventoryOpenEvent event) {
-        if(event.getPlayer().getGameMode() == GameMode.CREATIVE && !event.getPlayer().hasPermission("illegal.bypass")){
+        if(event.getPlayer().getGameMode() == GameMode.CREATIVE && !event.getPlayer().hasPermission("illegal.bypass") && creativechestlock){
             event.getPlayer().sendMessage(ChatColor.RED + "You cant open containers in creative!");
             event.setCancelled(true);
             return;
