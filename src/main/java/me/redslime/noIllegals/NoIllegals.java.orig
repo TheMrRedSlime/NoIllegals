@@ -373,7 +373,7 @@ public final class NoIllegals extends JavaPlugin implements Listener {
             sendAlert("Illegal Spawn Egg " + item.getType().name() + " Has been Removed.");
             item.setAmount(0);
             modified = true;
-        }
+        }                    
 
         try {
             if (noIllegalBlocks && (item.getType() == Material.BEDROCK || item.getType() == Material.BARRIER ||
@@ -522,7 +522,7 @@ public final class NoIllegals extends JavaPlugin implements Listener {
                 URL url = new URL("https://api.modrinth.com/v2/project/noillegals/version");
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("GET");
-
+                
                 BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
                 StringBuilder response = new StringBuilder();
                 String line;
@@ -530,18 +530,18 @@ public final class NoIllegals extends JavaPlugin implements Listener {
                     response.append(line);
                 }
                 reader.close();
-
+                
                 String json = response.toString();
-
+                
                 // Find "version_number" value
                 int versionIndex = json.indexOf("\"version_number\"");
                 if (versionIndex == -1) return;
-
+                
                 int colonIndex = json.indexOf(":", versionIndex);
                 int quoteStart = json.indexOf("\"", colonIndex + 1);
                 int quoteEnd = json.indexOf("\"", quoteStart + 1);
                 String latestVersion = json.substring(quoteStart + 1, quoteEnd);
-
+                
                 // Find filename from first file
                 int filesIndex = json.indexOf("\"files\"");
                 int urlIndex = json.indexOf("\"url\"", filesIndex);
@@ -549,36 +549,36 @@ public final class NoIllegals extends JavaPlugin implements Listener {
                 int urlQuoteStart = json.indexOf("\"", urlColonIndex + 1);
                 int urlQuoteEnd = json.indexOf("\"", urlQuoteStart + 1);
                 String downloadUrl = json.substring(urlQuoteStart + 1, urlQuoteEnd);
-
+                
                 // Find filename
                 int filenameIndex = json.indexOf("\"filename\"", filesIndex);
                 int filenameColonIndex = json.indexOf(":", filenameIndex);
                 int filenameQuoteStart = json.indexOf("\"", filenameColonIndex + 1);
                 int filenameQuoteEnd = json.indexOf("\"", filenameQuoteStart + 1);
                 String remoteFileName = json.substring(filenameQuoteStart + 1, filenameQuoteEnd);
-
+                
                 String currentJarPath = getClass().getProtectionDomain().getCodeSource().getLocation().getFile();
                 String currentFileName = new File(currentJarPath).getName();
-
+                
                 if (!remoteFileName.equals(currentFileName) || !latestVersion.equals(getDescription().getVersion())) {
-                    getLogger().info(ChatColor.GREEN + "New version found: " + latestVersion);
-                    getLogger().info(ChatColor.GREEN + "Downloading: " + remoteFileName);
-
+                    getLogger().info("New version found: " + latestVersion);
+                    getLogger().info("Downloading: " + remoteFileName);
+                    
                     URL downloadUrlObj = new URL(downloadUrl);
                     HttpURLConnection downloadConn = (HttpURLConnection) downloadUrlObj.openConnection();
-
+                    
                     File pluginsFolder = new File("plugins");
                     File newFile = new File(pluginsFolder, remoteFileName);
-
+                    
                     try (InputStream in = downloadConn.getInputStream()) {
                         Files.copy(in, newFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
                     }
-
-                    getLogger().info(ChatColor.GREEN + "Update downloaded! Restart the server to apply.");
+                    
+                    getLogger().info("Update downloaded! Restart the server to apply.");
                 }
-
+                
             } catch (Exception e) {
-                getLogger().warning(ChatColor.RED + "Update check failed: " + e.getMessage());
+                getLogger().warning("Update check failed: " + e.getMessage());
             }
         });
     }

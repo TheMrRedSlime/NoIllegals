@@ -4,9 +4,9 @@ fixIllegals: true
 bstats: true
 # Fix Items over the vanilla limit
 fixOverstack: true
-# disable Unbreaking tag
+# disable Unbreaking tag (Might break a few plugins)
 fixUnbreakable: true
-# disable Attribute Items, AttributeModifiers
+# disable Attribute Items, AttributeModifiers (Might Break a few plugins)
 fixAttribute: true
 # disable Bedrock, Barrier, Light, Structure Void, Structure Block and End portal frames.
 noIllegalBlocks: true
