@@ -1,5 +1,7 @@
 # Fix Illegally Enchanted items
 fixIllegals: true
+#Do you want to use bstats?
+bstats: true
 # Fix Items over the vanilla limit
 fixOverstack: true
 # disable Unbreaking tag
@@ -18,3 +20,6 @@ creativechestlock: true
 nospawneggs: true
 # Webhook to send alerts to
 webhook-url: "YOUR_DISCORD_WEBHOOK_URL_HERE"
+#Periodic Checks
+should-check-periodically: true
+periodic-timing-in-seconds: 300

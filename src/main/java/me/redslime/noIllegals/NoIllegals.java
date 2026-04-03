@@ -6,13 +6,14 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 
+import org.bstats.bukkit.Metrics;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
@@ -21,7 +22,6 @@ import org.bukkit.block.Container;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Arrow;
-import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -32,6 +32,8 @@ import org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason;
 import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.InventoryMoveItemEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -42,8 +44,6 @@ import org.bukkit.inventory.meta.EnchantmentStorageMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.potion.PotionEffect;
-import org.bukkit.potion.PotionType;
 import org.lushplugins.pluginupdater.api.updater.Updater;
 
 import com.google.gson.Gson;
@@ -51,9 +51,14 @@ import com.google.gson.Gson;
 public final class NoIllegals extends JavaPlugin implements Listener {
 
     private static long lastRequestTime = 0;
-    private boolean fixPotions, noIllegalBlocks, fixIllegals, fixOverstack, fixAttribute, fixUnbreakable, antichestnbt, creativechestlock, nospawneggs;
+    private boolean fixPotions, noIllegalBlocks, fixIllegals, fixOverstack, fixAttribute, fixUnbreakable, antichestnbt, creativechestlock, nospawneggs, shouldbstats, shouldCheckPeriodically;
     private FileConfiguration config;
     private String webhookUrl;
+    private long periodicTiming;
+    private final Queue<ItemStack> itemQueue = new ConcurrentLinkedQueue<>();
+    private boolean isProcessing = false;
+    private Metrics metrics;
+    private int taskId = -1;
 
 
     public void onEnable() {
@@ -64,6 +69,12 @@ public final class NoIllegals extends JavaPlugin implements Listener {
         reloadConfigValues();
         System.out.println("[NoIllegals]: Enabled!");
         autoUpdate();
+        startPeriodicCheck();
+
+        if (shouldbstats) {
+            Metrics metrics = new Metrics(this, 30551);
+        }
+
         getServer().getPluginManager().registerEvents(this, this);
         getCommand("illegal").setExecutor((sender, command, label, args) -> {
             if (sender instanceof Player player) {
@@ -74,24 +85,79 @@ public final class NoIllegals extends JavaPlugin implements Listener {
                 reloadConfig();
                 config = getConfig(); // Apparently this should fix the fact that i keep having to restart for the config to reload
                 reloadConfigValues();
+                startPeriodicCheck();
                 player.sendMessage(ChatColor.GREEN + "Reloaded Config!");
                 return true;
+            } else {
+                //console support
+                reloadConfig();
+                startPeriodicCheck();
+                config = getConfig();
+                reloadConfigValues();
+                sender.sendMessage(ChatColor.GREEN + "Reloaded Config!");
             }
             return false;
         });
     }
 
     private void reloadConfigValues() {
-        webhookUrl = config.getString("webhook-url");
-        fixPotions = config.getBoolean("fixPotions");
-        noIllegalBlocks = config.getBoolean("noIllegalBlocks");
-        fixIllegals = config.getBoolean("fixIllegals");
-        fixOverstack = config.getBoolean("fixOverstack");
-        fixAttribute = config.getBoolean("fixAttribute");
-        fixUnbreakable = config.getBoolean("fixUnbreakable");
-        antichestnbt = config.getBoolean("antichestnbt");
-        creativechestlock = config.getBoolean("creativechestlock");
-        nospawneggs = config.getBoolean("nospawneggs");
+        webhookUrl = config.getString("webhook-url", "YOUR_DISCORD_WEBHOOK_URL_HERE");
+        periodicTiming = config.getInt("periodic-timing-in-seconds", 300);
+        fixPotions = config.getBoolean("fixPotions", true);
+        noIllegalBlocks = config.getBoolean("noIllegalBlocks", true);
+        fixIllegals = config.getBoolean("fixIllegals", true);
+        fixOverstack = config.getBoolean("fixOverstack", true);
+        fixAttribute = config.getBoolean("fixAttribute", true);
+        fixUnbreakable = config.getBoolean("fixUnbreakable",true);
+        antichestnbt = config.getBoolean("antichestnbt", true);
+        creativechestlock = config.getBoolean("creativechestlock", true);
+        nospawneggs = config.getBoolean("nospawneggs", true);
+        shouldbstats = config.getBoolean("bstats", true);
+        shouldCheckPeriodically = config.getBoolean("should-check-periodically", true);
+    }
+
+    private void startPeriodicCheck() {
+        if (taskId != -1) Bukkit.getScheduler().cancelTask(taskId);
+        if (periodicTiming <= 0) return;
+        if (!shouldCheckPeriodically) return;
+
+        taskId = Bukkit.getScheduler().runTaskTimer(this, () -> {
+            if (!shouldCheckPeriodically) return;
+            for (Player plr: Bukkit.getOnlinePlayers()) {
+                checkInventory(plr.getInventory());
+            }            
+        }, periodicTiming * 20L, periodicTiming * 20L).getTaskId();
+    }
+
+    private void processQueue() {
+        if (isProcessing) return;
+        isProcessing = true;
+        
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+            ItemStack item;
+            int processed = 0;
+            int maxPerTick = 20;
+            
+            while ((item = itemQueue.poll()) != null && processed < maxPerTick) {
+                final ItemStack itemToCheck = item;
+                Bukkit.getScheduler().runTask(this, () -> {
+                    checkItem(itemToCheck);
+                });
+                processed++;
+            }
+            
+            isProcessing = false;
+            
+            if (!itemQueue.isEmpty()) {
+                Bukkit.getScheduler().runTaskLater(this, this::processQueue, 1L);
+            }
+        });
+    }
+
+    private void queueCheckItem(ItemStack item) {
+        if (item == null || item.getType() == Material.AIR) return;
+        itemQueue.offer(item);
+        processQueue();
     }
 
     @EventHandler
@@ -123,14 +189,14 @@ public final class NoIllegals extends JavaPlugin implements Listener {
     @EventHandler
     public void onPlayerHold(PlayerItemHeldEvent event){
         if(!event.getPlayer().hasPermission("illegal.bypass")){
-            checkItem(event.getPlayer().getInventory().getItem(event.getNewSlot()));
+            queueCheckItem(event.getPlayer().getInventory().getItem(event.getNewSlot()));
         }
     }
     
     @EventHandler
     public void onPlayerInteract(PlayerInteractEvent event){
         if(!event.getPlayer().hasPermission("illegal.bypass")){
-            checkItem(event.getItem());
+            queueCheckItem(event.getItem());
             if(!event.getMaterial().isAir()) {
                 if (getConfig().getBoolean("noIllegalBlocks") && (event.getMaterial() == Material.BEDROCK || event.getMaterial() == Material.BARRIER || event.getMaterial() == Material.LIGHT || event.getMaterial() == Material.STRUCTURE_VOID || event.getMaterial() == Material.STRUCTURE_BLOCK || event.getMaterial() == Material.END_PORTAL_FRAME || event.getMaterial() == Material.SPAWNER || event.getMaterial() == Material.REINFORCED_DEEPSLATE || event.getMaterial() == Material.COMMAND_BLOCK_MINECART)) {
                     event.setCancelled(true);
@@ -180,10 +246,26 @@ public final class NoIllegals extends JavaPlugin implements Listener {
     public void onInventoryClick(InventoryClickEvent event){
         if(event.getWhoClicked() instanceof Player plr){
             if(!plr.hasPermission("illegal.bypass")){
-                checkItem(event.getCurrentItem());
+                queueCheckItem(event.getCurrentItem());
             }
         } else {
-            checkItem(event.getCurrentItem());
+            queueCheckItem(event.getCurrentItem());
+        }
+    }
+
+    @EventHandler
+    public void onInventoryMove(InventoryMoveItemEvent event) {
+        queueCheckItem(event.getItem());
+    }
+
+    @EventHandler
+    public void onInventoryDrag(InventoryDragEvent event) {
+        if(event.getWhoClicked() instanceof Player plr){
+            if(!plr.hasPermission("illegal.bypass")){
+                queueCheckItem(event.getCursor());
+            }
+        } else {
+            queueCheckItem(event.getCursor());
         }
     }
 
@@ -196,6 +278,7 @@ public final class NoIllegals extends JavaPlugin implements Listener {
         }
         if(!event.getPlayer().hasPermission("illegal.bypass")){
             checkInventory(event.getInventory());
+            checkInventory(event.getPlayer().getInventory());
         }
     }
 
@@ -203,6 +286,7 @@ public final class NoIllegals extends JavaPlugin implements Listener {
     public void onInventoryClose(InventoryCloseEvent event) {
         if(!event.getPlayer().hasPermission("illegal.bypass")){
             checkInventory(event.getInventory());
+            checkInventory(event.getPlayer().getInventory());
         }
     }
 
@@ -212,14 +296,20 @@ public final class NoIllegals extends JavaPlugin implements Listener {
                 return;
             }
         }
-        for (int i = 0; i < inventory.getSize(); i++) {
-            ItemStack item = inventory.getItem(i);
-            if (item != null && !item.getType().isAir()) {
-                if (checkItem(item)) {
-                    inventory.setItem(i, item);
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+            for (int i = 0; i < inventory.getSize(); i++) {
+                ItemStack item = inventory.getItem(i);
+                if (item != null && !item.getType().isAir()) {
+                    final int slot = i;
+                    final ItemStack itemToCheck = item.clone();
+                    Bukkit.getScheduler().runTask(this, () -> {
+                        if (checkItem(itemToCheck)) {
+                            inventory.setItem(slot, itemToCheck);
+                        }
+                    });
                 }
             }
-        }
+        });
     }
 
     private boolean checkItem(ItemStack item) {
