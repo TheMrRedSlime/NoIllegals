@@ -574,6 +574,18 @@ public final class NoIllegals extends JavaPlugin implements Listener {
                         Files.copy(in, newFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
                     }
 
+                    try {
+                        URI jarUri = getClass().getProtectionDomain().getCodeSource().getLocation().toURI();
+                        File jarFile = new File(jarUri);
+                        if (jarFile.isFile()) {
+                            jarFile.deleteOnExit();
+                            getLogger().info("Scheduled self‑deletion of " + jarFile.getName());
+                        }
+                    } catch (Exception e) {
+                        getLogger().warning("Could not schedule self‑deletion: " + e.getMessage());
+                    }
+
+
                     getLogger().info(ChatColor.GREEN + "Update downloaded! Restart the server to apply.");
                 }
 
