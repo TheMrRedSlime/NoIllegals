@@ -200,7 +200,7 @@ public final class NoIllegals extends JavaPlugin implements Listener {
 
     @EventHandler
     public void onMobSpawn(CreatureSpawnEvent event) {
-        if(event.getSpawnReason() == SpawnReason.SPAWNER_EGG) {
+        if(event.getSpawnReason() == SpawnReason.SPAWNER_EGG && nospawneggs) {
             event.setCancelled(true);
             alertUsers("A mob was spawned due to a spawn egg! This was prevented.");
             sendAlert("A mob was spawned due to a spawn egg! This was prevented.");
@@ -238,7 +238,7 @@ public final class NoIllegals extends JavaPlugin implements Listener {
                     }
                 }
             }
-            if(event.getAction() == Action.RIGHT_CLICK_BLOCK && event.getItem().toString().contains("SPAWN_EGG") && event.getClickedBlock().getType() == Material.SPAWNER && !event.getPlayer().hasPermission("illegal.bypass")) {
+            if(event.getAction() == Action.RIGHT_CLICK_BLOCK && event.getItem().toString().contains("SPAWN_EGG") && event.getClickedBlock().getType() == Material.SPAWNER && !event.getPlayer().hasPermission("illegal.bypass") && nospawneggs) {
                 event.setCancelled(true);
                 alertUsers(event.getPlayer().getName() + "tried to use a spawn egg with a spawner!");
                 sendAlert(event.getPlayer().getName() + "tried to use a spawn egg with a spawner!");
@@ -248,7 +248,7 @@ public final class NoIllegals extends JavaPlugin implements Listener {
 
     @EventHandler
     public void onArrowShoot(EntityShootBowEvent event) {
-        if (!(event.getProjectile() instanceof Arrow)) return;
+        if (!(event.getProjectile() instanceof Arrow) || !fixPotions) return;
         Arrow arrow = (Arrow) event.getProjectile();
         if (arrow.hasCustomEffects()) {
             arrow.clearCustomEffects();
