@@ -1,5 +1,5 @@
 name: NoIllegals
-version: '2.0'
+version: '2.1'
 main: me.redslime.noIllegals.NoIllegals
 api-version: '1.13'
 authors: [ TheMrRedSlime ]
